@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>XAU/USD Bias Desk</title>
+<style>
+:root{--bg:#f3f1ec;--panel:#fffdf8;--ink:#1d2127;--mute:#6c7178;--line:#ddd8cc;--gold:#a8791c;--bull:#13806f;--bear:#b93a4b;--zone:rgba(168,121,28,.14);
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1620;--panel:#142030;--ink:#e6e9ed;--mute:#8d9aa8;--line:#243448;--gold:#d9a93f;--bull:#3cc4aa;--bear:#ef6b7c;--zone:rgba(217,169,63,.16)}}
+:root[data-theme="dark"]{--bg:#0e1620;--panel:#142030;--ink:#e6e9ed;--mute:#8d9aa8;--line:#243448;--gold:#d9a93f;--bull:#3cc4aa;--bear:#ef6b7c;--zone:rgba(217,169,63,.16)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Source Sans 3","Segoe UI",system-ui,sans-serif}
+main{max-width:1060px;margin:0 auto;padding:20px 16px 40px}
+h1,h2{font-family:"Fraunces",Georgia,serif;font-weight:600;margin:0}
+h2{font-size:18px;margin-bottom:10px}
+.hero{display:flex;flex-wrap:wrap;gap:20px 40px;align-items:flex-end;padding:8px 0 20px;border-bottom:2px solid var(--gold)}
+.hero h1{font-size:clamp(40px,9vw,76px);line-height:1}
+.hero .sub{color:var(--mute);max-width:44ch}
+.meter{flex:1;min-width:240px}
+.bar{position:relative;height:10px;border-radius:5px;background:linear-gradient(90deg,var(--bear),var(--line) 50%,var(--bull));margin:8px 0 4px}
+.bar i{position:absolute;top:-5px;width:4px;height:20px;border-radius:2px;background:var(--ink);transform:translateX(-2px)}
+.row{display:flex;justify-content:space-between;font-size:13px;color:var(--mute)}
+.mini{display:grid;grid-template-columns:110px 1fr 52px;gap:8px;align-items:center;margin-top:8px;font-size:13px}
+.mini .bar{margin:0;height:6px}.mini .bar i{height:14px;top:-4px;width:3px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-top:18px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.chartwrap{overflow-x:auto}
+canvas{display:block;width:100%;height:340px}
+.tog{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:10px;font-size:13px}
+.tog label{cursor:pointer}
+ul{margin:0;padding-left:18px}li{margin:4px 0}
+.up{color:var(--bull)}.dn{color:var(--bear)}
+textarea{width:100%;min-height:110px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;font:13px/1.4 ui-monospace,Consolas,monospace}
+button{background:var(--gold);color:#fff;border:0;border-radius:6px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;margin:8px 8px 0 0}
+button.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.hl{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding:5px 0;font-size:14px}
+.hl b{white-space:nowrap}
+.note{color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<section class="hero">
+  <div>
+    <div class="note" id="srcnote">Sample data</div>
+    <h1 id="bias">&nbsp;</h1>
+    <div class="sub" id="biasSub"></div>
+  </div>
+  <div class="meter">
+    <div class="row"><span>Bearish</span><span id="comb">0</span><span>Bullish</span></div>
+    <div class="bar"><i id="mC"></i></div>
+    <div class="mini"><span>Market structure</span><div class="bar"><i id="mS"></i></div><span id="vS"></span></div>
+    <div class="mini"><span>News sentiment</span><div class="bar"><i id="mN"></i></div><span id="vN"></span></div>
+    <div class="mini"><span>Weight on news</span><input id="w" type="range" min="0" max="100" value="40"><span id="vW">40%</span></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>XAU/USD chart with ICT/SMC marks</h2>
+  <div class="tog" id="tog">
+    <label><input type="checkbox" data-k="st" checked> BOS / CHoCH</label>
+    <label><input type="checkbox" data-k="fvg" checked> Fair value gaps</label>
+    <label><input type="checkbox" data-k="ob" checked> Order blocks</label>
+    <label><input type="checkbox" data-k="liq" checked> Liquidity</label>
+    <label><input type="checkbox" data-k="pd" checked> Premium / discount</label>
+  </div>
+  <div class="chartwrap"><canvas id="cv" aria-label="Candlestick chart"></canvas></div>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <h2>What the structure says</h2>
+    <ul id="why"></ul>
+  </section>
+  <section class="card">
+    <h2>News headlines</h2>
+    <textarea id="news" aria-label="Headlines, one per line"></textarea>
+    <button id="score">Score headlines</button>
+    <div id="hls" style="margin-top:10px"></div>
+    <p class="note">Keyword model for gold drivers (Fed, dollar, yields, safe-haven demand). The live version swaps this for FinBERT.</p>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Use your own price data</h2>
+  <p class="note">Paste candles, one per line: <code>open,high,low,close</code> (oldest first, 30+ lines). Export from TradingView, Yahoo Finance or MT5.</p>
+  <textarea id="csv" aria-label="Candle data"></textarea>
+  <button id="apply">Analyze my data</button><button class="alt" id="reset">Back to sample</button>
+</section>
+
+<p class="note">Analysis tool, not financial advice. Bias scores summarize rules and keywords; they do not predict the price.</p>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function sample(){const r=rng(11);let p=3300;const dr=[.5,-.7,.8,-.5,.7,-.2],d=[];
+ for(let i=0;i<100;i++){const o=p,c=o+dr[Math.floor(i/17)%6]*2+(r()-.5)*5,h=Math.max(o,c)+r()*2.5,l=Math.min(o,c)-r()*2.5;d.push({o,h,l,c});p=c}return d}
+
+function analyze(d){
+ const n=d.length,k=3,sh=[],sl=[];
+ for(let i=k;i<n-k;i++){let hi=1,lo=1;
+  for(let j=1;j<=k;j++){if(d[i].h<=d[i-j].h||d[i].h<=d[i+j].h)hi=0;if(d[i].l>=d[i-j].l||d[i].l>=d[i+j].l)lo=0}
+  if(hi)sh.push(i);if(lo)sl.push(i)}
+ const sw=[...sh.map(i=>({i,t:'h'})),...sl.map(i=>({i,t:'l'}))].sort((a,b)=>a.i-b.i);
+ const ev=[];let trend=0,lh=null,ll=null,si=0;
+ for(let i=0;i<n;i++){
+  while(si<sw.length&&sw[si].i+k<=i){const s=sw[si++];if(s.t=='h')lh=s;else ll=s}
+  if(lh&&d[i].c>d[lh.i].h){ev.push({i,from:lh.i,lvl:d[lh.i].h,dir:1,type:trend==-1?'CHoCH':'BOS'});trend=1;lh=null}
+  else if(ll&&d[i].c<d[ll.i].l){ev.push({i,from:ll.i,lvl:d[ll.i].l,dir:-1,type:trend==1?'CHoCH':'BOS'});trend=-1;ll=null}
+ }
+ const price=d[n-1].c,fvg=[];
+ for(let i=2;i<n;i++){const a=d[i-2],c=d[i];
+  if(c.l-a.h>.5)fvg.push({i:i-1,dir:1,top:c.l,bot:a.h});
+  else if(a.l-c.h>.5)fvg.push({i:i-1,dir:-1,top:a.l,bot:c.h})}
+ fvg.forEach(f=>{f.open=true;for(let j=f.i+2;j<n;j++){if(f.dir==1?d[j].l<=f.bot:d[j].h>=f.top){f.open=false;break}}});
+ const openFvg=fvg.filter(f=>f.open).slice(-4);
+ const ob=[];
+ ev.slice(-4).forEach(e=>{
+  let ex=e.from;for(let j=e.from;j<=e.i;j++){if(e.dir==1?d[j].l<d[ex].l:d[j].h>d[ex].h)ex=j}
+  let b=ex;for(let j=ex;j>=Math.max(0,ex-4);j--){if(e.dir==1?d[j].c<d[j].o:d[j].c>d[j].o){b=j;break}}
+  const x=d[b],o={i:b,dir:e.dir,top:x.h,bot:x.l,mit:false};
+  for(let j=e.i+1;j<n;j++){if(e.dir==1?d[j].c<o.bot:d[j].c>o.top){o.mit=true;break}}
+  if(!o.mit)ob.push(o)});
+ const tol=price*.0004,eqs=[];
+ [['h',sh],['l',sl]].forEach(([t,arr])=>{const a=arr.slice(-6);let found=null;
+  for(let x=0;x<a.length;x++)for(let y=x+1;y<a.length;y++){
+   const p1=t=='h'?d[a[x]].h:d[a[x]].l,p2=t=='h'?d[a[y]].h:d[a[y]].l;
+   if(Math.abs(p1-p2)<tol)found={t,i1:a[x],i2:a[y],lvl:t=='h'?Math.max(p1,p2):Math.min(p1,p2)}}
+  if(found){found.swept=-1;for(let j=found.i2+1;j<n;j++){if(t=='h'?(d[j].h>found.lvl&&d[j].c<found.lvl):(d[j].l<found.lvl&&d[j].c>found.lvl)){found.swept=j;break}}eqs.push(found)}});
+ let pd=null;
+ if(sh.length&&sl.length){const hi=d[sh[sh.length-1]].h,lo=d[sl[sl.length-1]].l;if(hi>lo)pd={hi,lo,eq:(hi+lo)/2,pos:(price-lo)/(hi-lo)}}
+ let s=trend*2;const why=[];
+ why.push(trend==1?['up','Bullish structure: price is making higher highs via a break of structure.']:trend==-1?['dn','Bearish structure: price is making lower lows via a break of structure.']:['','No confirmed structure break yet.']);
+ const le=ev[ev.length-1];
+ if(le){why.push([le.dir>0?'up':'dn',`Last break: ${le.type} ${le.dir>0?'up':'down'} through ${le.lvl.toFixed(1)}, ${n-1-le.i} candles ago.`]);
+  if(le.type=='CHoCH'&&n-1-le.i<=15){s+=le.dir;why.push([le.dir>0?'up':'dn','Recent change of character adds to the direction.'])}}
+ if(pd&&trend){const z=pd.pos<.5?'discount':'premium';
+  why.push(['',`Price sits in ${z} (${Math.round(pd.pos*100)}% of the swing range, midpoint ${pd.eq.toFixed(1)}).`]);
+  if(trend==1&&pd.pos<.5){s+=1;why.push(['up','Bullish trend pulling back into discount: the zone ICT looks to buy.'])}
+  if(trend==-1&&pd.pos>=.5){s-=1;why.push(['dn','Bearish trend rallying into premium: the zone ICT looks to sell.'])}}
+ eqs.forEach(q=>{if(q.swept>=0&&n-1-q.swept<=10){const up=q.t=='l';s+=up?1:-1;
+  why.push([up?'up':'dn',up?'Equal lows were swept and price closed back above: sell-side liquidity taken.':'Equal highs were swept and price closed back below: buy-side liquidity taken.'])}
+  else if(q.swept<0)why.push(['',`Resting liquidity above equal ${q.t=='h'?'highs':'lows'} near ${q.lvl.toFixed(1)} not yet swept.`])});
+ const near=openFvg.filter(f=>Math.abs((f.top+f.bot)/2-price)<price*.004);
+ if(near.length)why.push(['',`${near.length} open fair value gap${near.length>1?'s':''} close to price.`]);
+ return{sh,sl,ev,openFvg,ob,eqs,pd,trend,why,score:Math.max(-100,Math.min(100,s/4*100))}}
+
+const P=[['rate cuts',2],['rate cut',2],['dovish',2],['dollar slips',1.5],['dollar falls',1.5],['dollar weakens',1.5],['weaker dollar',1.5],['yields fall',1.5],['yields drop',1.5],['yields slip',1],['safe-haven',2],['safe haven',2],['geopolitical',1],['tensions rise',1.5],['central bank buying',1.5],['inflows',1],['recession',1],['supports bullion',1],['supports gold',1]];
+const N=[['rate hike',-2],['hawkish',-2],['dollar rises',-1.5],['dollar gains',-1.5],['stronger dollar',-1.5],['dollar strengthens',-1.5],['yields climb',-1.5],['yields rise',-1.5],['yields jump',-1.5],['strong jobs',-1.5],['strong data',-1],['risk-on',-1],['ceasefire',-1.5],['tensions ease',-1.5],['outflows',-1],['profit-taking',-1],['weighing on gold',-1.5]];
+const G=[['higher',1],['rises',1],['gains',1],['rallies',1],['climbs',1],['surges',1.5],['jumps',1],['lower',-1],['falls',-1],['drops',-1],['slides',-1],['slumps',-1.5],['slips',-1],['declines',-1]];
+function scoreLine(t){let s=t.toLowerCase(),v=0;
+ [...P,...N].forEach(([w,x])=>{if(s.includes(w)){v+=x;s=s.split(w).join(' ')}});
+ if(/gold|bullion|xau/.test(s))G.forEach(([w,x])=>{if(s.includes(w))v+=x});
+ return Math.max(-3,Math.min(3,v))}
+
+let data=sample(),A=null,sent=0,SRC='Sample data';
+const layers={st:1,fvg:1,ob:1,liq:1,pd:1};
+
+function draw(){
+ const cv=$('cv'),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=340;
+ cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);
+ const n=data.length,pad={l:8,r:58,t:12,b:12},cw=(W-pad.l-pad.r)/n;
+ let mx=-1e9,mn=1e9;data.forEach(c=>{mx=Math.max(mx,c.h);mn=Math.min(mn,c.l)});const m=(mx-mn)*.05;mx+=m;mn-=m;
+ const X=i=>pad.l+(i+.5)*cw,Y=p=>pad.t+(mx-p)/(mx-mn)*(H-pad.t-pad.b);
+ const bull=cssv('--bull'),bear=cssv('--bear'),gold=cssv('--gold'),mute=cssv('--mute'),line=cssv('--line');
+ g.font='11px system-ui,sans-serif';g.textBaseline='middle';
+ g.strokeStyle=line;g.fillStyle=mute;g.lineWidth=1;
+ for(let k=0;k<=4;k++){const p=mn+(mx-mn)*k/4,y=Y(p);g.beginPath();g.moveTo(pad.l,y);g.lineTo(W-pad.r,y);g.stroke();g.fillText(p.toFixed(0),W-pad.r+6,y)}
+ if(layers.pd&&A.pd){const y1=Y(A.pd.hi),y2=Y(A.pd.eq),y3=Y(A.pd.lo);
+  g.fillStyle=bear+'18';g.fillRect(pad.l,y1,W-pad.l-pad.r,y2-y1);g.fillStyle=bull+'18';g.fillRect(pad.l,y2,W-pad.l-pad.r,y3-y2);
+  g.setLineDash([4,4]);g.strokeStyle=mute;g.beginPath();g.moveTo(pad.l,y2);g.lineTo(W-pad.r,y2);g.stroke();g.setLineDash([]);
+  g.fillStyle=mute;g.fillText('EQ',W-pad.r+6,y2-9)}
+ if(layers.fvg)A.openFvg.forEach(f=>{g.fillStyle=(f.dir>0?bull:bear)+'38';g.fillRect(X(f.i-1),Y(f.top),W-pad.r-X(f.i-1),Y(f.bot)-Y(f.top));g.fillStyle=mute;g.fillText('FVG',X(f.i)+4,Y(f.top)+7)});
+ if(layers.ob)A.ob.forEach(o=>{g.fillStyle=gold+'40';g.fillRect(X(o.i)-cw/2,Y(o.top),W-pad.r-X(o.i)+cw/2,Y(o.bot)-Y(o.top));g.strokeStyle=gold;g.strokeRect(X(o.i)-cw/2,Y(o.top),W-pad.r-X(o.i)+cw/2,Y(o.bot)-Y(o.top));g.fillStyle=gold;g.fillText(o.dir>0?'Bull OB':'Bear OB',X(o.i)+6,(Y(o.top)+Y(o.bot))/2)});
+ data.forEach((c,i)=>{const up=c.c>=c.o,col=up?bull:bear;g.strokeStyle=col;g.fillStyle=col;
+  g.beginPath();g.moveTo(X(i),Y(c.h));g.lineTo(X(i),Y(c.l));g.stroke();
+  const t=Y(Math.max(c.o,c.c)),b=Y(Math.min(c.o,c.c));g.fillRect(X(i)-cw*.35,t,cw*.7,Math.max(1,b-t))});
+ if(layers.st)A.ev.slice(-6).forEach(e=>{const y=Y(e.lvl);g.strokeStyle=e.dir>0?bull:bear;g.setLineDash([5,3]);g.beginPath();g.moveTo(X(e.from),y);g.lineTo(X(e.i),y);g.stroke();g.setLineDash([]);
+  g.fillStyle=e.dir>0?bull:bear;g.textAlign='center';g.fillText(e.type,(X(e.from)+X(e.i))/2,y+(e.dir>0?-8:9));g.textAlign='left'});
+ if(layers.liq)A.eqs.forEach(q=>{const y=Y(q.lvl);g.strokeStyle=gold;g.setLineDash([2,3]);g.beginPath();g.moveTo(X(q.i1),y);g.lineTo(W-pad.r,y);g.stroke();g.setLineDash([]);g.fillStyle=gold;g.fillText(q.t=='h'?'EQH':'EQL',X(q.i2)+4,y+(q.t=='h'?-8:9))});
+ const last=data[n-1].c;g.fillStyle=ink();g.fillRect(W-pad.r,Y(last)-8,pad.r-2,16);g.fillStyle=cssv('--panel');g.fillText(last.toFixed(1),W-pad.r+4,Y(last))}
+function ink(){return cssv('--ink')}
+
+function setMark(id,v){$(id).style.left=((v+100)/200*100)+'%'}
+function render(){
+ A=analyze(data);
+ const wN=+$('w').value/100,comb=A.score*(1-wN)+sent*wN;
+ $('vW').textContent=Math.round(wN*100)+'%';
+ $('comb').textContent=(comb>0?'+':'')+comb.toFixed(0);
+ const lab=comb>25?'Bullish':comb<-25?'Bearish':'Neutral',b=$('bias');
+ b.textContent=lab;b.style.color=comb>25?'var(--bull)':comb<-25?'var(--bear)':'var(--ink)';
+ $('biasSub').textContent=`Directional bias from market structure and headline tone. Last price ${data[data.length-1].c.toFixed(1)}.`;
+ setMark('mC',comb);setMark('mS',A.score);setMark('mN',sent);
+ $('vS').textContent=A.score.toFixed(0);$('vN').textContent=sent.toFixed(0);
+ $('srcnote').textContent=SRC;
+ $('why').innerHTML='';A.why.forEach(([c,t])=>{const li=document.createElement('li');if(c)li.className=c;li.textContent=t;$('why').appendChild(li)});
+ draw()}
+
+function runNews(){
+ const lines=$('news').value.split('\n').map(x=>x.trim()).filter(Boolean);
+ const box=$('hls');box.innerHTML='';let sum=0;
+ lines.forEach(t=>{const v=scoreLine(t);sum+=v;const r=document.createElement('div');r.className='hl';
+  const a=document.createElement('span');a.textContent=t;const b=document.createElement('b');b.textContent=(v>0?'+':'')+v.toFixed(1);b.className=v>0?'up':v<0?'dn':'';r.append(a,b);box.appendChild(r)});
+ sent=lines.length?Math.max(-100,Math.min(100,sum/lines.length/2.5*100)):0;render()}
+
+$('news').value=['Gold edges higher as dollar slips ahead of Fed minutes','Treasury yields climb after strong jobs data, weighing on gold','Safe-haven demand lifts gold as geopolitical tensions rise','Central bank buying supports bullion despite profit-taking','Fed officials signal rate cut possible later this year'].join('\n');
+$('score').onclick=runNews;
+$('w').oninput=render;
+$('tog').onchange=e=>{layers[e.target.dataset.k]=e.target.checked?1:0;draw()};
+$('apply').onclick=()=>{
+ const rows=$('csv').value.split('\n').map(l=>l.split(/[,\t;]/).map(Number)).filter(r=>r.length>=4&&r.slice(-4).every(isFinite)).map(r=>{const[o,h,l,c]=r.slice(-4);return{o,h,l,c}}).slice(-120);
+ if(rows.length<30){alert('Need at least 30 valid lines of open,high,low,close.');return}
+ data=rows;SRC='Your pasted data ('+rows.length+' candles)';render()};
+$('reset').onclick=()=>{data=sample();SRC='Sample data';$('csv').value='';render()};
+window.addEventListener('resize',()=>A&&draw());
+fetch('data.json?'+Date.now()).then(r=>r.json()).then(j=>{data=j.candles;SRC='Live: GC=F gold futures, hourly. Updated '+j.updated;$('news').value=j.headlines.join('\n');runNews()}).catch(()=>runNews());
+</script>
+</body>
+</html>
